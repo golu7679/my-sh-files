@@ -52,3 +52,39 @@ fi
 
 echo ""
 echo "💡 When ready to switch: git checkout $BRANCH_NAME (already up-to-date!)"
+
+
+
+
+
+
+
+
+
+
+# second command that will revert the last commit
+#!/bin/bash
+
+# Exit immediately if any command fails
+set -e
+
+# Get current active branch
+CURRENT_BRANCH=$(git branch --show-current)
+
+if [ -z "$CURRENT_BRANCH" ]; then
+  echo "❌ Could not determine the current branch."
+  exit 1
+fi
+
+echo "✅ Current branch: $CURRENT_BRANCH"
+
+# Reset last commit
+echo "🔄 Resetting last commit..."
+git reset HEAD~1
+
+# Force push to origin
+echo "🚀 Force pushing to origin/$CURRENT_BRANCH..."
+git push -f origin "$CURRENT_BRANCH"
+
+echo "✅ Done!"
+
