@@ -15,16 +15,30 @@ device_options=()
 device_serials=()
 
 index=1
-for serial in $device_list; do
+# Save current IFS and set to newline to handle serials with spaces
+OLDIFS=$IFS
+IFS=$'\n'
+
+for serial in $(adb devices | grep -w "device" | cut -f1); do
+  if [ -z "$serial" ]; then continue; fi
+  
+  # Restore IFS for commands inside the loop
+  IFS=$OLDIFS
+  
   model=$(adb -s "$serial" shell getprop ro.product.model | tr -d '\r')
   name=$(adb -s "$serial" shell getprop ro.product.name | tr -d '\r')
   manufacturer=$(adb -s "$serial" shell getprop ro.product.manufacturer | tr -d '\r')
+  
   device_string="$manufacturer $model ($name) - [$serial]"
   device_options+=("$device_string")
   device_serials+=("$serial")
   echo "$index) $device_string"
   ((index++))
+  
+  # Set IFS back to newline for the next iteration
+  IFS=$'\n'
 done
+IFS=$OLDIFS
 
 # Ask for multiple device selection
 echo ""
