@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Ensure the script is run with bash
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+fi
+
 ########################################################
 # Proxy Manager V2
 # Author: Golu Rajak
@@ -14,8 +19,6 @@ NGINX_ENABLED="/etc/nginx/sites-enabled"
 BASE_DIR="/opt/proxy-manager"
 BACKUP_DIR="$BASE_DIR/backups"
 
-mkdir -p "$BASE_DIR"
-mkdir -p "$BACKUP_DIR"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -28,19 +31,19 @@ NC='\033[0m'
 ###########################################
 
 success() {
-    echo -e "${GREEN}$1${NC}"
+    printf "${GREEN}%s${NC}\n" "$1"
 }
 
 error() {
-    echo -e "${RED}$1${NC}"
+    printf "${RED}%s${NC}\n" "$1"
 }
 
 warning() {
-    echo -e "${YELLOW}$1${NC}"
+    printf "${YELLOW}%s${NC}\n" "$1"
 }
 
 info() {
-    echo -e "${BLUE}$1${NC}"
+    printf "${BLUE}%s${NC}\n" "$1"
 }
 
 pause() {
@@ -1096,5 +1099,10 @@ run_application() {
 ###########################################
 
 require_root
+
+# Create base and backup directories
+mkdir -p "$BASE_DIR"
+mkdir -p "$BACKUP_DIR"
+
 install_dependencies
 run_application
