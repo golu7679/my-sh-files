@@ -302,12 +302,10 @@ delete_proxy() {
 
     clear
 
-    list_proxies
-
-    echo
-
-    read -p "Domain to delete: " DOMAIN
-    DOMAIN=$(clean_domain "$DOMAIN")
+    if ! select_domain_prompt "Domain to delete (number or name): "; then
+        return
+    fi
+    DOMAIN="$SELECTED_DOMAIN"
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -341,23 +339,29 @@ list_proxies() {
 
     printf "\n"
 
-    printf "%-35s %-10s %-10s %-15s\n" \
+    printf "%-4s %-35s %-10s %-10s %-15s\n" \
+        "#" \
         "DOMAIN" \
         "STATUS" \
         "PORT" \
         "SSL EXPIRY"
 
-    printf "%-35s %-10s %-10s %-15s\n" \
+    printf "%-4s %-35s %-10s %-10s %-15s\n" \
+        "---" \
         "------" \
         "------" \
         "----" \
         "----------"
+
+    DOMAINS_LIST=()
+    local i=1
 
     for file in "$NGINX_AVAILABLE"/*; do
 
         [[ -f "$file" ]] || continue
 
         DOMAIN=$(basename "$file")
+        DOMAINS_LIST+=("$DOMAIN")
 
         PORT=$(get_proxy_port "$DOMAIN")
 
@@ -369,14 +373,52 @@ list_proxies() {
 
         SSL_EXPIRY=$(get_ssl_expiry "$DOMAIN")
 
-        printf "%-35s %-10s %-10s %-15s\n" \
+        printf "%-4s %-35s %-10s %-10s %-15s\n" \
+            "$i" \
             "$DOMAIN" \
             "$STATUS" \
             "${PORT:-N/A}" \
             "$SSL_EXPIRY"
+
+        ((i++))
     done
 
     echo
+}
+
+select_domain_prompt() {
+
+    local PROMPT_TEXT="${1:-Select Domain (number or name): }"
+
+    list_proxies
+
+    if [[ ${#DOMAINS_LIST[@]} -eq 0 ]]; then
+        error "No domain proxies available."
+        SELECTED_DOMAIN=""
+        return 1
+    fi
+
+    read -p "$PROMPT_TEXT" CHOICE
+    CHOICE=$(clean_domain "$CHOICE")
+
+    if [[ -z "$CHOICE" ]]; then
+        SELECTED_DOMAIN=""
+        return 1
+    fi
+
+    if [[ "$CHOICE" =~ ^[0-9]+$ ]]; then
+        if [[ "$CHOICE" -ge 1 && "$CHOICE" -le "${#DOMAINS_LIST[@]}" ]]; then
+            SELECTED_DOMAIN="${DOMAINS_LIST[$((CHOICE - 1))]}"
+            return 0
+        else
+            error "Invalid domain selection number."
+            SELECTED_DOMAIN=""
+            return 1
+        fi
+    else
+        SELECTED_DOMAIN="$CHOICE"
+        return 0
+    fi
 }
 
 ###########################################
@@ -441,10 +483,10 @@ show_details() {
 
     clear
 
-    list_proxies
-
-    read -p "Domain: " DOMAIN
-    DOMAIN=$(clean_domain "$DOMAIN")
+    if ! select_domain_prompt "Domain (number or name): "; then
+        return
+    fi
+    DOMAIN="$SELECTED_DOMAIN"
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -482,10 +524,10 @@ enable_proxy() {
 
     clear
 
-    list_proxies
-
-    read -p "Domain: " DOMAIN
-    DOMAIN=$(clean_domain "$DOMAIN")
+    if ! select_domain_prompt "Domain to enable (number or name): "; then
+        return
+    fi
+    DOMAIN="$SELECTED_DOMAIN"
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -509,10 +551,10 @@ disable_proxy() {
 
     clear
 
-    list_proxies
-
-    read -p "Domain: " DOMAIN
-    DOMAIN=$(clean_domain "$DOMAIN")
+    if ! select_domain_prompt "Domain to disable (number or name): "; then
+        return
+    fi
+    DOMAIN="$SELECTED_DOMAIN"
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -534,10 +576,10 @@ change_port() {
 
     clear
 
-    list_proxies
-
-    read -p "Domain: " DOMAIN
-    DOMAIN=$(clean_domain "$DOMAIN")
+    if ! select_domain_prompt "Domain (number or name): "; then
+        return
+    fi
+    DOMAIN="$SELECTED_DOMAIN"
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -595,14 +637,10 @@ enable_ssl() {
 
     clear
 
-    list_proxies
-
-    read -p "Domain: " DOMAIN
-    DOMAIN=$(clean_domain "$DOMAIN")
-
-    if [[ -z "$DOMAIN" ]]; then
+    if ! select_domain_prompt "Domain for SSL (number or name): "; then
         return
     fi
+    DOMAIN="$SELECTED_DOMAIN"
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -639,14 +677,10 @@ remove_ssl() {
 
     clear
 
-    list_proxies
-
-    read -p "Domain: " DOMAIN
-    DOMAIN=$(clean_domain "$DOMAIN")
-
-    if [[ -z "$DOMAIN" ]]; then
+    if ! select_domain_prompt "Domain for SSL removal (number or name): "; then
         return
     fi
+    DOMAIN="$SELECTED_DOMAIN"
 
     echo
     warning "Delete certificate for:"
@@ -671,9 +705,10 @@ ssl_status() {
 
     clear
 
-    list_proxies
-
-    read -p "Domain: " DOMAIN
+    if ! select_domain_prompt "Domain (number or name): "; then
+        return
+    fi
+    DOMAIN="$SELECTED_DOMAIN"
 
     echo
 
@@ -718,14 +753,10 @@ health_check() {
 
     clear
 
-    list_proxies
-
-    read -p "Domain: " DOMAIN
-    DOMAIN=$(clean_domain "$DOMAIN")
-
-    if [[ -z "$DOMAIN" ]]; then
+    if ! select_domain_prompt "Domain for Health Check (number or name): "; then
         return
     fi
+    DOMAIN="$SELECTED_DOMAIN"
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -778,14 +809,10 @@ dns_check() {
 
     clear
 
-    list_proxies
-
-    read -p "Domain: " DOMAIN
-    DOMAIN=$(clean_domain "$DOMAIN")
-
-    if [[ -z "$DOMAIN" ]]; then
+    if ! select_domain_prompt "Domain for DNS Check (number or name): "; then
         return
     fi
+    DOMAIN="$SELECTED_DOMAIN"
 
     echo
 
@@ -859,14 +886,10 @@ domain_logs() {
 
     clear
 
-    list_proxies
-
-    read -p "Domain: " DOMAIN
-    DOMAIN=$(clean_domain "$DOMAIN")
-
-    if [[ -z "$DOMAIN" ]]; then
+    if ! select_domain_prompt "Domain for Logs (number or name): "; then
         return
     fi
+    DOMAIN="$SELECTED_DOMAIN"
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
