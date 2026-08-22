@@ -76,6 +76,10 @@ install_dependencies() {
     if ! command -v dig >/dev/null; then
         apt install -y dnsutils
     fi
+
+    if ! command -v openssl >/dev/null; then
+        apt install -y openssl
+    fi
 }
 
 ###########################################
@@ -116,6 +120,36 @@ get_proxy_port() {
         | tail -1
 }
 
+get_ssl_expiry() {
+
+    local DOMAIN="$1"
+    local CERT_FILE="/etc/letsencrypt/live/$DOMAIN/cert.pem"
+
+    if [[ -f "$CERT_FILE" ]] && command -v openssl >/dev/null; then
+        local END_DATE
+        END_DATE=$(openssl x509 -enddate -noout -in "$CERT_FILE" 2>/dev/null | cut -d= -f2)
+        if [[ -n "$END_DATE" ]]; then
+            date -d "$END_DATE" "+%Y-%m-%d" 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$END_DATE" "+%Y-%m-%d" 2>/dev/null || echo "$END_DATE"
+        else
+            echo "N/A"
+        fi
+    else
+        echo "N/A"
+    fi
+}
+
+clean_domain() {
+
+    local INPUT="$1"
+
+    echo "$INPUT" | sed -e 's|^https*://||' -e 's|/.*||' -e 's|::.*||' | tr '[:upper:]' '[:lower:]'
+}
+
+validate_port() {
+
+    [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
 ###########################################
 # ADD PROXY
 ###########################################
@@ -128,10 +162,16 @@ add_proxy() {
     echo
 
     read -p "Domain: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
     read -p "Application Port: " PORT
 
     if [[ -z "$DOMAIN" || -z "$PORT" ]]; then
         error "Domain and port required."
+        return
+    fi
+
+    if ! validate_port "$PORT"; then
+        error "Invalid port number (must be between 1 and 65535)."
         return
     fi
 
@@ -186,6 +226,7 @@ add_static_website() {
     echo
 
     read -p "Domain: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
     read -p "Website Path: " WEBSITE_PATH
 
     if [[ -z "$DOMAIN" || -z "$WEBSITE_PATH" ]]; then
@@ -266,6 +307,7 @@ delete_proxy() {
     echo
 
     read -p "Domain to delete: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -299,15 +341,17 @@ list_proxies() {
 
     printf "\n"
 
-    printf "%-45s %-10s %-15s\n" \
+    printf "%-35s %-10s %-10s %-15s\n" \
         "DOMAIN" \
         "STATUS" \
-        "PORT"
+        "PORT" \
+        "SSL EXPIRY"
 
-    printf "%-45s %-10s %-15s\n" \
+    printf "%-35s %-10s %-10s %-15s\n" \
         "------" \
         "------" \
-        "----"
+        "----" \
+        "----------"
 
     for file in "$NGINX_AVAILABLE"/*; do
 
@@ -323,10 +367,13 @@ list_proxies() {
             STATUS="DISABLED"
         fi
 
-        printf "%-45s %-10s %-15s\n" \
+        SSL_EXPIRY=$(get_ssl_expiry "$DOMAIN")
+
+        printf "%-35s %-10s %-10s %-15s\n" \
             "$DOMAIN" \
             "$STATUS" \
-            "$PORT"
+            "${PORT:-N/A}" \
+            "$SSL_EXPIRY"
     done
 
     echo
@@ -341,18 +388,21 @@ search_proxy() {
     clear
 
     read -p "Search Domain: " SEARCH
+    SEARCH=$(clean_domain "$SEARCH")
 
     echo
 
-    printf "%-45s %-10s %-15s\n" \
+    printf "%-35s %-10s %-10s %-15s\n" \
         "DOMAIN" \
         "STATUS" \
-        "PORT"
+        "PORT" \
+        "SSL EXPIRY"
 
-    printf "%-45s %-10s %-15s\n" \
+    printf "%-35s %-10s %-10s %-15s\n" \
         "------" \
         "------" \
-        "----"
+        "----" \
+        "----------"
 
     for file in "$NGINX_AVAILABLE"/*; do
 
@@ -370,10 +420,13 @@ search_proxy() {
                 STATUS="DISABLED"
             fi
 
-            printf "%-45s %-10s %-15s\n" \
+            SSL_EXPIRY=$(get_ssl_expiry "$DOMAIN")
+
+            printf "%-35s %-10s %-10s %-15s\n" \
                 "$DOMAIN" \
                 "$STATUS" \
-                "$PORT"
+                "${PORT:-N/A}" \
+                "$SSL_EXPIRY"
         fi
     done
 
@@ -388,7 +441,10 @@ show_details() {
 
     clear
 
+    list_proxies
+
     read -p "Domain: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -409,7 +465,8 @@ show_details() {
 
     if certbot certificates 2>/dev/null \
         | grep -q "$DOMAIN"; then
-        echo "SSL    : ENABLED"
+        SSL_EXP=$(get_ssl_expiry "$DOMAIN")
+        echo "SSL    : ENABLED (Expires: $SSL_EXP)"
     else
         echo "SSL    : DISABLED"
     fi
@@ -425,7 +482,10 @@ enable_proxy() {
 
     clear
 
+    list_proxies
+
     read -p "Domain: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -449,7 +509,10 @@ disable_proxy() {
 
     clear
 
+    list_proxies
+
     read -p "Domain: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -471,7 +534,10 @@ change_port() {
 
     clear
 
+    list_proxies
+
     read -p "Domain: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -488,6 +554,11 @@ change_port() {
 
     if [[ -z "$NEW_PORT" ]]; then
         error "Port required."
+        return
+    fi
+
+    if ! validate_port "$NEW_PORT"; then
+        error "Invalid port number (must be between 1 and 65535)."
         return
     fi
 
@@ -524,9 +595,17 @@ enable_ssl() {
 
     clear
 
+    list_proxies
+
     read -p "Domain: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
 
     if [[ -z "$DOMAIN" ]]; then
+        return
+    fi
+
+    if ! proxy_exists "$DOMAIN"; then
+        error "Proxy not found."
         return
     fi
 
@@ -560,7 +639,10 @@ remove_ssl() {
 
     clear
 
+    list_proxies
+
     read -p "Domain: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
 
     if [[ -z "$DOMAIN" ]]; then
         return
@@ -589,6 +671,8 @@ ssl_status() {
 
     clear
 
+    list_proxies
+
     read -p "Domain: " DOMAIN
 
     echo
@@ -614,6 +698,11 @@ renew_ssl() {
 
     clear
 
+    if ! command -v certbot >/dev/null; then
+        error "Certbot is not installed."
+        return
+    fi
+
     info "Renewing certificates..."
 
     certbot renew
@@ -629,7 +718,14 @@ health_check() {
 
     clear
 
+    list_proxies
+
     read -p "Domain: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
+
+    if [[ -z "$DOMAIN" ]]; then
+        return
+    fi
 
     if ! proxy_exists "$DOMAIN"; then
         error "Proxy not found."
@@ -639,18 +735,36 @@ health_check() {
     PORT=$(get_proxy_port "$DOMAIN")
 
     echo
-    info "Checking localhost:$PORT"
-    echo
 
-    if curl \
-        --connect-timeout 3 \
-        -s \
-        "http://127.0.0.1:$PORT" \
-        >/dev/null
-    then
-        success "Application is responding."
+    if [[ -n "$PORT" ]]; then
+        info "Checking reverse proxy backend localhost:$PORT"
+        echo
+
+        if curl \
+            --connect-timeout 3 \
+            -s \
+            "http://127.0.0.1:$PORT" \
+            >/dev/null
+        then
+            success "Application is responding."
+        else
+            error "Application is not responding on port $PORT."
+        fi
     else
-        error "Application is not responding."
+        info "Checking static website configuration..."
+        ROOT_PATH=$(grep -E '^\s*root\s+' "$NGINX_AVAILABLE/$DOMAIN" 2>/dev/null | awk '{print $2}' | tr -d ';')
+        echo
+        if [[ -n "$ROOT_PATH" && -d "$ROOT_PATH" ]]; then
+            success "Static root directory exists ($ROOT_PATH)."
+        else
+            error "Static root directory missing or invalid ($ROOT_PATH)."
+        fi
+
+        if curl --connect-timeout 3 -s -H "Host: $DOMAIN" "http://127.0.0.1" >/dev/null; then
+            success "Local Nginx response OK."
+        else
+            warning "Local Nginx did not return success response."
+        fi
     fi
 
     echo
@@ -664,20 +778,27 @@ dns_check() {
 
     clear
 
+    list_proxies
+
     read -p "Domain: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
+
+    if [[ -z "$DOMAIN" ]]; then
+        return
+    fi
 
     echo
 
-    DOMAIN_IP=$(dig +short "$DOMAIN" | head -1)
+    DOMAIN_IP=$(dig +short "$DOMAIN" A 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | tail -1)
 
-    SERVER_IP=$(curl -s https://api.ipify.org)
+    SERVER_IP=$(curl -s --connect-timeout 5 https://api.ipify.org)
 
-    echo "Domain IP : $DOMAIN_IP"
-    echo "Server IP : $SERVER_IP"
+    echo "Domain IP : ${DOMAIN_IP:-Not resolved}"
+    echo "Server IP : ${SERVER_IP:-Unable to get public IP}"
     echo
 
-    if [[ "$DOMAIN_IP" == "$SERVER_IP" ]]; then
-        success "DNS is pointing correctly."
+    if [[ -n "$DOMAIN_IP" && "$DOMAIN_IP" == "$SERVER_IP" ]]; then
+        success "DNS is pointing correctly to this server."
     else
         error "DNS does not point to this server."
     fi
@@ -738,7 +859,19 @@ domain_logs() {
 
     clear
 
+    list_proxies
+
     read -p "Domain: " DOMAIN
+    DOMAIN=$(clean_domain "$DOMAIN")
+
+    if [[ -z "$DOMAIN" ]]; then
+        return
+    fi
+
+    if ! proxy_exists "$DOMAIN"; then
+        error "Proxy not found."
+        return
+    fi
 
     ACCESS="/var/log/nginx/${DOMAIN}.access.log"
     ERROR_LOG="/var/log/nginx/${DOMAIN}.error.log"
