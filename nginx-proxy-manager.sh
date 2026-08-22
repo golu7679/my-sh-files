@@ -990,6 +990,48 @@ list_backups() {
     echo
 }
 
+###########################################
+# ORACLE CLOUD FIREWALL FIX
+###########################################
+
+fix_oracle_firewall() {
+
+    clear
+
+    echo "Fix Oracle Cloud / OS Firewall (Open Ports 80 & 443)"
+    echo
+
+    info "Applying iptables rules to open HTTP (80) & HTTPS (443)..."
+
+    if command -v iptables >/dev/null; then
+        iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport 80 -j ACCEPT
+        iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+
+        if command -v apt >/dev/null; then
+            info "Ensuring netfilter-persistent is installed to keep rules after reboot..."
+            DEBIAN_FRONTEND=noninteractive apt update -qq 2>/dev/null || true
+            DEBIAN_FRONTEND=noninteractive apt install -y iptables-persistent netfilter-persistent >/dev/null 2>&1 || true
+        fi
+
+        if command -v netfilter-persistent >/dev/null; then
+            netfilter-persistent save >/dev/null 2>&1 || true
+        fi
+
+        success "iptables rules applied and saved."
+    fi
+
+    if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "active"; then
+        info "Configuring UFW firewall..."
+        ufw allow 80/tcp >/dev/null 2>&1
+        ufw allow 443/tcp >/dev/null 2>&1
+        success "UFW rules added for ports 80 & 443."
+    fi
+
+    echo
+    warning "Note: Make sure to also allow ports 80 & 443 in your Oracle Cloud Console Ingress Security Rules!"
+    echo
+}
+
 
 ###########################################
 # DASHBOARD
@@ -1066,8 +1108,9 @@ main_menu() {
     echo
     echo "23. Nginx Status"
     echo "24. Reload Nginx"
+    echo "25. Fix Oracle Cloud Firewall (Open Ports 80/443)"
     echo
-    echo "25. Exit"
+    echo "26. Exit"
     echo
 
     read -p "Select option: " OPTION
@@ -1206,6 +1249,11 @@ run_application() {
             ;;
 
             25)
+                fix_oracle_firewall
+                pause
+            ;;
+
+            26)
 
                 clear
 
